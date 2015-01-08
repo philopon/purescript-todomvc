@@ -12,3 +12,4 @@ $ pulp browserify > bundle.js
 todos
 ---
 * save state to webstrage
+* store view to hash
