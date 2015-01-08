@@ -113,9 +113,9 @@ view :: State -> VTree
 view state =
   E.div [ A.class_ "todomvc-wrapper" ]
     [ E.section [ A.id_ "todoapp" ]
-        [ L.thunk1 taskEntry state.field
-        , L.thunk2 taskList state.visibility state.tasks
-        , L.thunk2 controls state.visibility state.tasks
+        [ taskEntry state.field
+        , taskList state.visibility state.tasks
+        , controls state.visibility state.tasks
         ]
     , infoFooter
     ]
@@ -133,8 +133,8 @@ taskEntry task =
       , A.autofocus true
       , A.value task
       , A.name "newTodo"
-      , EV.onInput (EV.targetValue >>> UpdateField >>> K.emit updates)
-      , onEnter (K.emit updates Add)
+      , EV.onInput (\v -> K.emitAsync updates $ UpdateField $ EV.targetValue v)
+      , onEnter (K.emitAsync updates Add)
       ]
       []
     ]
@@ -159,7 +159,7 @@ taskList visibility tasks =
             , A.type_ "checkbox"
             , A.name "toggle"
             , A.checked allCompleted
-            , EV.onClick (\_ -> K.emit updates (CheckAll (not allCompleted)))
+            , EV.onClick (\_ -> K.emitAsync updates (CheckAll (not allCompleted)))
             ] []
         , E.label
             [ A.for "toggle-all" ]
@@ -181,14 +181,14 @@ todoItem todo =
                 [ A.class_ "toggle"
                 , A.type_ "checkbox"
                 , A.checked todo.completed
-                , EV.onClick (\_ -> K.emit updates (Check todo.id (not todo.completed)))
+                , EV.onClick (\_ -> K.emitAsync updates (Check todo.id (not todo.completed)))
                 ] []
             , E.label
-                [ EV.onDoubleClick (\_ -> K.emit updates (EditingTask todo.id true)) ]
+                [ EV.onDoubleClick (\_ -> K.emitAsync updates (EditingTask todo.id true)) ]
                 [ E.text todo.description ]
             , E.button
                 [ A.class_ "destroy"
-                , EV.onClick (\_ -> K.emit updates (Delete todo.id))
+                , EV.onClick (\_ -> K.emitAsync updates (Delete todo.id))
                 ] []
             ]
         , E.input
@@ -196,9 +196,9 @@ todoItem todo =
             , A.value todo.description
             , A.name "title"
             , A.id_ ("todo-" ++ show (unTaskId todo.id))
-            , EV.onInput (EV.targetValue >>> UpdateTask todo.id >>> K.emit updates)
-            , EV.onBlur  (\_ -> K.emit updates $ EditingTask todo.id false)
-            , onEnter    (K.emit updates $ EditingTask todo.id false)
+            , EV.onInput (\v -> K.emitAsync updates $ UpdateTask todo.id $ EV.targetValue v)
+            , EV.onBlur  (\_ -> K.emitAsync updates $ EditingTask todo.id false)
+            , onEnter    (K.emitAsync updates $ EditingTask todo.id false)
             ] []
         ]
 
@@ -228,7 +228,7 @@ controls visibility tasks =
             [ A.class_ "clear-completed"
             , A.id_ "clear-completed"
             , A.hidden (tasksCompleted == 0)
-            , EV.onClick (\_ -> K.emit updates DeleteComplete)
+            , EV.onClick (\_ -> K.emitAsync updates DeleteComplete)
             ]
             [ E.text $ "Clear completed (" ++ show tasksCompleted ++ ")" ]
         ]
@@ -236,7 +236,7 @@ controls visibility tasks =
 visibilitySwap uri visibility actualVisibility =
   let className = if visibility == actualVisibility then "selected" else ""
    in E.li
-        [ EV.onClick (\_ -> K.emit updates (ChangeVisibility visibility)) ]
+        [ EV.onClick (\_ -> K.emitAsync updates (ChangeVisibility visibility)) ]
         [ E.a [ A.class_ className, A.href uri] [ E.text $ show visibility ]]
 
 infoFooter :: VTree
@@ -257,7 +257,7 @@ function appendBody(node) {
 main = do
   html <- createElement (E.text "loading...")
   getNode html >>= appendBody
-  K.onValue state $ view >>> flip patch html
+  K.onValue state $ \v -> patch (view v) html
 
 state :: K.Property () K.OT State
 state = K.unsafeGlobalize $ K.scan step startingState updates
