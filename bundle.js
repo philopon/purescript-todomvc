@@ -61,6 +61,7 @@ PS.Prelude = (function () {
     function numNegate(n) {  return -n;};
     function refEq(r1) {  return function(r2) {    return r1 === r2;  };};
     function refIneq(r1) {  return function(r2) {    return r1 !== r2;  };};
+    function eqArrayImpl(f) {  return function(xs) {    return function(ys) {      if (xs.length !== ys.length) return false;      for (var i = 0; i < xs.length; i++) {        if (!f(xs[i])(ys[i])) return false;      }      return true;    };  };};
     function boolAnd(b1) {  return function(b2) {    return b1 && b2;  };};
     function boolOr(b1) {  return function(b2) {    return b1 || b2;  };};
     function boolNot(b) {  return !b;};
@@ -133,8 +134,21 @@ PS.Prelude = (function () {
             };
         };
     };
+    var eqString = new Eq(refIneq, refEq);
     var eqNumber = new Eq(refIneq, refEq);
+    var eqBoolean = new Eq(refIneq, refEq);
     var boolLikeBoolean = new BoolLike(boolAnd, boolNot, boolOr);
+    var eqArray = function (__dict_Eq_8) {
+        return new Eq(function (xs) {
+            return function (ys) {
+                return not(boolLikeBoolean)($eq$eq(eqArray(__dict_Eq_8))(xs)(ys));
+            };
+        }, function (xs) {
+            return function (ys) {
+                return eqArrayImpl($eq$eq(__dict_Eq_8))(xs)(ys);
+            };
+        });
+    };
     var ap = function (__dict_Monad_15) {
         return function (f) {
             return function (a) {
@@ -173,7 +187,10 @@ PS.Prelude = (function () {
         Unit: Unit, 
         ap: ap, 
         boolLikeBoolean: boolLikeBoolean, 
+        eqArray: eqArray, 
+        eqBoolean: eqBoolean, 
         eqNumber: eqNumber, 
+        eqString: eqString, 
         liftA1: liftA1, 
         not: not, 
         numNumber: numNumber, 
@@ -4286,11 +4303,13 @@ PS.Data_Function = (function () {
     function runFn2(fn) {  return function(a) {    return function(b) {      return fn(a, b);    };  };};
     function runFn3(fn) {  return function(a) {    return function(b) {      return function(c) {        return fn(a, b, c);      };    };  };};
     function runFn4(fn) {  return function(a) {    return function(b) {      return function(c) {        return function(d) {          return fn(a, b, c, d);        };      };    };  };};
+    function runFn5(fn) {  return function(a) {    return function(b) {      return function(c) {        return function(d) {          return function(e) {            return fn(a, b, c, d, e);          };        };      };    };  };};
     return {
         mkFn2: mkFn2, 
         runFn2: runFn2, 
         runFn3: runFn3, 
-        runFn4: runFn4
+        runFn4: runFn4, 
+        runFn5: runFn5
     };
 })();
 var PS = PS || {};
@@ -4701,6 +4720,88 @@ PS.Data_Array = (function () {
     };
 })();
 var PS = PS || {};
+PS.Data_Html_Lazy = (function () {
+    "use strict";
+    var Data_Function = PS.Data_Function;
+    var Prelude = PS.Prelude;
+    
+var thunkImpl = (function(){
+  function Thunk(fn, args, eqFn){
+    this.fn   = fn;
+    this.args = args;
+    this.eqFn = eqFn;
+  }
+
+  Thunk.prototype.type = "Thunk";
+  Thunk.prototype.render = render;
+
+  function shouldUpdate(current, prev){
+    if(!current || !prev) return true;
+
+    var cargs = current.args;
+    var pargs = prev.args;
+
+    return !current.eqFn(cargs, pargs);
+  }
+
+  function render(prev){
+    if(shouldUpdate(this, prev)) {
+       return this.fn(this.args);
+    } else {
+      return prev.vnode;
+    }
+  }
+
+  return Thunk;
+})();;
+    
+function partial1Impl(Thunk, eqFn, fn, a){
+  function compare(x, y){
+    return eqFn(x[0], y[0]);
+  }
+
+  return new Thunk(function(a){return fn(a[0]);}, [a], compare);
+};
+    
+function partial2Impl(Thunk, eqFn, fn, a, b) {
+  function compare(x, y){
+    return eqFn({"_0": x[0], "_1": x[1]}, {"_0": y[0], "_1": y[1]});
+  }
+
+  return new Thunk(function(a){return fn(a[0],a[1]);}, [a, b], compare);
+};
+    var partial2 = function (p) {
+        return function (f) {
+            return function (a) {
+                return function (b) {
+                    return partial2Impl(thunkImpl, function (a_1, b_1) {
+                        return p(a_1)(b_1);
+                    }, function (a_1, b_1) {
+                        return f(a_1)(b_1);
+                    }, a, b);
+                };
+            };
+        };
+    };
+    var partial1 = function (p) {
+        return function (f) {
+            return function (a) {
+                return partial1Impl(thunkImpl, function (a_1, b) {
+                    return p(a_1)(b);
+                }, f, a);
+            };
+        };
+    };
+    var thunk1 = function (__dict_Eq_91) {
+        return partial1(Prelude["=="](__dict_Eq_91));
+    };
+    return {
+        partial1: partial1, 
+        partial2: partial2, 
+        thunk1: thunk1
+    };
+})();
+var PS = PS || {};
 PS.Data_Monoid = (function () {
     "use strict";
     var Prelude = PS.Prelude;
@@ -4932,7 +5033,9 @@ function scanImpl(f, a, stream){
     var scan = function (f) {
         return function (a) {
             return function (s) {
-                return scanImpl(Data_Function.mkFn2(f), a, s);
+                return scanImpl(function (a_1, b) {
+                    return f(a_1)(b);
+                }, a, s);
             };
         };
     };
@@ -4963,6 +5066,7 @@ PS.Main = (function () {
     var Data_Array = PS.Data_Array;
     var Data_Html_Elements_Html5 = PS.Data_Html_Elements_Html5;
     var Data_Html_Attributes_Html5 = PS.Data_Html_Attributes_Html5;
+    var Data_Html_Lazy = PS.Data_Html_Lazy;
     var Data_Html_Events = PS.Data_Html_Events;
     var Control_Monad = PS.Control_Monad;
     var FRP_Kefir = PS.FRP_Kefir;
@@ -5044,6 +5148,11 @@ PS.Main = (function () {
     };
     ChangeVisibility.create = function (value0) {
         return new ChangeVisibility(value0);
+    };
+    var TaskWrapper = {
+        create: function (value) {
+            return value;
+        }
     };
     
 function appendBody(node) {
@@ -5167,149 +5276,163 @@ function appendBody(node) {
             return _505 === _506;
         };
     });
+    var eqTaskWrapper = new Prelude.Eq(function (a) {
+        return function (b) {
+            return !Prelude["=="](eqTaskWrapper)(a)(b);
+        };
+    }, function (_510) {
+        return function (_511) {
+            return Prelude["=="](eqTaskId)(_510.id)(_511.id) && (_510.editing === _511.editing && (_510.completed === _511.completed && _510.description === _511.description));
+        };
+    });
+    var sameVisTask = function (a) {
+        return function (b) {
+            return Prelude["=="](eqVisibility)(a._0)(b._0) && Prelude["=="](Prelude.eqArray(eqTaskWrapper))(Prelude["<$>"](Data_Array.functorArray)(TaskWrapper.create)(a._1))(Prelude["<$>"](Data_Array.functorArray)(TaskWrapper.create)(b._1));
+        };
+    };
     var step = function (state_1) {
         return function (update) {
             if (update instanceof Add) {
-                var _539 = {};
-                for (var _540 in state_1) {
-                    if (state_1.hasOwnProperty(_540)) {
-                        _539[_540] = state_1[_540];
+                var _543 = {};
+                for (var _544 in state_1) {
+                    if (state_1.hasOwnProperty(_544)) {
+                        _543[_544] = state_1[_544];
                     };
                 };
-                _539.uid = succTaskId(state_1.uid);
-                _539.field = "";
-                _539.tasks = Data_String["null"](state_1.field) ? state_1.tasks : Prelude["++"](Data_Array.semigroupArray)(state_1.tasks)([ newTask(state_1.field)(state_1.uid) ]);
-                return _539;
+                _543.uid = succTaskId(state_1.uid);
+                _543.field = "";
+                _543.tasks = Data_String["null"](state_1.field) ? state_1.tasks : Prelude["++"](Data_Array.semigroupArray)(state_1.tasks)([ newTask(state_1.field)(state_1.uid) ]);
+                return _543;
             };
             if (update instanceof UpdateField) {
-                var _541 = {};
-                for (var _542 in state_1) {
-                    if (state_1.hasOwnProperty(_542)) {
-                        _541[_542] = state_1[_542];
+                var _545 = {};
+                for (var _546 in state_1) {
+                    if (state_1.hasOwnProperty(_546)) {
+                        _545[_546] = state_1[_546];
                     };
                 };
-                _541.field = update.value0;
-                return _541;
+                _545.field = update.value0;
+                return _545;
             };
             if (update instanceof EditingTask) {
                 var stepTask = function (t) {
                     return Prelude["=="](eqTaskId)(t.id)(update.value0) ? (function () {
-    var _544 = {};
-    for (var _545 in t) {
-        if (t.hasOwnProperty(_545)) {
-            _544[_545] = t[_545];
+    var _548 = {};
+    for (var _549 in t) {
+        if (t.hasOwnProperty(_549)) {
+            _548[_549] = t[_549];
         };
     };
-    _544.editing = update.value1;
-    return _544;
+    _548.editing = update.value1;
+    return _548;
 })() : t;
                 };
-                var _546 = {};
-                for (var _547 in state_1) {
-                    if (state_1.hasOwnProperty(_547)) {
-                        _546[_547] = state_1[_547];
+                var _550 = {};
+                for (var _551 in state_1) {
+                    if (state_1.hasOwnProperty(_551)) {
+                        _550[_551] = state_1[_551];
                     };
                 };
-                _546.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
-                return _546;
+                _550.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                return _550;
             };
             if (update instanceof UpdateTask) {
                 var stepTask = function (t) {
                     return Prelude["=="](eqTaskId)(t.id)(update.value0) ? (function () {
-    var _550 = {};
-    for (var _551 in t) {
-        if (t.hasOwnProperty(_551)) {
-            _550[_551] = t[_551];
+    var _554 = {};
+    for (var _555 in t) {
+        if (t.hasOwnProperty(_555)) {
+            _554[_555] = t[_555];
         };
     };
-    _550.description = update.value1;
-    return _550;
+    _554.description = update.value1;
+    return _554;
 })() : t;
                 };
-                var _552 = {};
-                for (var _553 in state_1) {
-                    if (state_1.hasOwnProperty(_553)) {
-                        _552[_553] = state_1[_553];
-                    };
-                };
-                _552.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
-                return _552;
-            };
-            if (update instanceof Delete) {
                 var _556 = {};
                 for (var _557 in state_1) {
                     if (state_1.hasOwnProperty(_557)) {
                         _556[_557] = state_1[_557];
                     };
                 };
-                _556.tasks = Data_Array.filter(function (t) {
-                    return Prelude["/="](eqTaskId)(t.id)(update.value0);
-                })(state_1.tasks);
+                _556.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
                 return _556;
             };
-            if (update instanceof DeleteComplete) {
-                var _559 = {};
-                for (var _560 in state_1) {
-                    if (state_1.hasOwnProperty(_560)) {
-                        _559[_560] = state_1[_560];
+            if (update instanceof Delete) {
+                var _560 = {};
+                for (var _561 in state_1) {
+                    if (state_1.hasOwnProperty(_561)) {
+                        _560[_561] = state_1[_561];
                     };
                 };
-                _559.tasks = Data_Array.filter(function (t) {
-                    return !t.completed;
+                _560.tasks = Data_Array.filter(function (t) {
+                    return Prelude["/="](eqTaskId)(t.id)(update.value0);
                 })(state_1.tasks);
-                return _559;
+                return _560;
             };
-            if (update instanceof Check) {
-                var stepTask = function (t) {
-                    return Prelude["=="](eqTaskId)(t.id)(update.value0) ? (function () {
-    var _561 = {};
-    for (var _562 in t) {
-        if (t.hasOwnProperty(_562)) {
-            _561[_562] = t[_562];
-        };
-    };
-    _561.completed = update.value1;
-    return _561;
-})() : t;
-                };
+            if (update instanceof DeleteComplete) {
                 var _563 = {};
                 for (var _564 in state_1) {
                     if (state_1.hasOwnProperty(_564)) {
                         _563[_564] = state_1[_564];
                     };
                 };
-                _563.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                _563.tasks = Data_Array.filter(function (t) {
+                    return !t.completed;
+                })(state_1.tasks);
                 return _563;
+            };
+            if (update instanceof Check) {
+                var stepTask = function (t) {
+                    return Prelude["=="](eqTaskId)(t.id)(update.value0) ? (function () {
+    var _565 = {};
+    for (var _566 in t) {
+        if (t.hasOwnProperty(_566)) {
+            _565[_566] = t[_566];
+        };
+    };
+    _565.completed = update.value1;
+    return _565;
+})() : t;
+                };
+                var _567 = {};
+                for (var _568 in state_1) {
+                    if (state_1.hasOwnProperty(_568)) {
+                        _567[_568] = state_1[_568];
+                    };
+                };
+                _567.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                return _567;
             };
             if (update instanceof CheckAll) {
                 var stepTask = function (t) {
-                    var _567 = {};
-                    for (var _568 in t) {
-                        if (t.hasOwnProperty(_568)) {
-                            _567[_568] = t[_568];
+                    var _571 = {};
+                    for (var _572 in t) {
+                        if (t.hasOwnProperty(_572)) {
+                            _571[_572] = t[_572];
                         };
                     };
-                    _567.completed = update.value0;
-                    return _567;
+                    _571.completed = update.value0;
+                    return _571;
                 };
-                var _569 = {};
-                for (var _570 in state_1) {
-                    if (state_1.hasOwnProperty(_570)) {
-                        _569[_570] = state_1[_570];
+                var _573 = {};
+                for (var _574 in state_1) {
+                    if (state_1.hasOwnProperty(_574)) {
+                        _573[_574] = state_1[_574];
                     };
                 };
-                _569.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
-                return _569;
+                _573.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                return _573;
             };
             if (update instanceof ChangeVisibility) {
-                var _572 = {};
-                for (var _573 in state_1) {
-                    if (state_1.hasOwnProperty(_573)) {
-                        _572[_573] = state_1[_573];
+                var _576 = {};
+                for (var _577 in state_1) {
+                    if (state_1.hasOwnProperty(_577)) {
+                        _576[_577] = state_1[_577];
                     };
                 };
-                _572.visibility = update.value0;
-                return _572;
+                _576.visibility = update.value0;
+                return _576;
             };
             throw new Error("Failed pattern match");
         };
@@ -5335,7 +5458,7 @@ function appendBody(node) {
         };
     };
     var view = function (state_1) {
-        return Data_Html_Elements_Html5.div([ Data_Html_Attributes_Html5.class_("todomvc-wrapper") ])([ Data_Html_Elements_Html5.section([ Data_Html_Attributes_Html5.id_("todoapp") ])([ taskEntry(state_1.field), taskList(state_1.visibility)(state_1.tasks), controls(state_1.visibility)(state_1.tasks) ]), infoFooter ]);
+        return Data_Html_Elements_Html5.div([ Data_Html_Attributes_Html5.class_("todomvc-wrapper") ])([ Data_Html_Elements_Html5.section([ Data_Html_Attributes_Html5.id_("todoapp") ])([ Data_Html_Lazy.thunk1(Prelude.eqString)(taskEntry)(state_1.field), Data_Html_Lazy.partial2(sameVisTask)(taskList)(state_1.visibility)(state_1.tasks), Data_Html_Lazy.partial2(sameVisTask)(controls)(state_1.visibility)(state_1.tasks) ]), infoFooter ]);
     };
     var main = function __do() {
         var _30 = Data_Html.createElement(Data_Html_Elements_Html5.text("loading..."))();
@@ -5356,17 +5479,20 @@ function appendBody(node) {
         DeleteComplete: DeleteComplete, 
         EditingTask: EditingTask, 
         TaskId: TaskId, 
+        TaskWrapper: TaskWrapper, 
         UpdateField: UpdateField, 
         UpdateTask: UpdateTask, 
         appendBody: appendBody, 
         controls: controls, 
         emptyState: emptyState, 
         eqTaskId: eqTaskId, 
+        eqTaskWrapper: eqTaskWrapper, 
         eqVisibility: eqVisibility, 
         infoFooter: infoFooter, 
         main: main, 
         newTask: newTask, 
         onEnter: onEnter, 
+        sameVisTask: sameVisTask, 
         showVisibility: showVisibility, 
         startingState: startingState, 
         state: state, 

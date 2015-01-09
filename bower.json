@@ -11,8 +11,8 @@
     "output"
   ],
   "dependencies": {
-    "purescript-html": "~0.6.1",
-    "purescript-kefir": "~0.6.0",
+    "purescript-html": "~0.6.2",
+    "purescript-kefir": "~0.6.1",
     "purescript-strings": "~0.4.2",
     "purescript-foldable-traversable": "~0.2.1",
     "purescript-lists": "~0.3.9",

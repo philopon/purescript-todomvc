@@ -48,6 +48,12 @@ type State =
   , visibility :: Visibility
   }
 
+newtype TaskWrapper = TaskWrapper Task
+
+instance eqTaskWrapper :: Eq TaskWrapper where
+  (==) (TaskWrapper a) (TaskWrapper b) = a.id == b.id && a.editing == b.editing && a.completed == b.completed && a.description == b.description
+  (/=) a b = not (a == b)
+
 type Task =
   { description :: String
   , completed   :: Boolean
@@ -113,12 +119,17 @@ view :: State -> VTree
 view state =
   E.div [ A.class_ "todomvc-wrapper" ]
     [ E.section [ A.id_ "todoapp" ]
-        [ taskEntry state.field
-        , taskList state.visibility state.tasks
-        , controls state.visibility state.tasks
+        [ L.thunk1 taskEntry state.field
+        , L.partial2 sameVisTask taskList state.visibility state.tasks
+        , L.partial2 sameVisTask controls state.visibility state.tasks
         ]
     , infoFooter
     ]
+
+sameVisTask :: L.Compare (L.A2 Visibility [Task])
+sameVisTask a b = a._0 == b._0 &&
+  (TaskWrapper <$> a._1) == (TaskWrapper <$> b._1)
+
 
 onEnter f = EV.onKeyDown $ \k -> when (EV.keyCode k == 13) f
 
