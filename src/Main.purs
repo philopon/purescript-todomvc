@@ -259,11 +259,11 @@ main = do
   getNode html >>= appendBody
   K.onValue state $ \v -> patch (view v) html
 
-state :: K.Property () K.OT State
+state :: K.Property _ _ _ State
 state = K.unsafeGlobalize $ K.scan step startingState updates
 
 startingState :: State
 startingState = emptyState
 
-updates :: K.Stream K.E K.OT Update
+updates :: K.Stream _ _ _ Update
 updates = K.unsafeGlobalize K.emitter
