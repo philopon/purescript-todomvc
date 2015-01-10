@@ -15,11 +15,6 @@
     "purescript-kefir": "~0.6.1",
     "purescript-strings": "~0.4.2",
     "purescript-foldable-traversable": "~0.2.1",
-    "purescript-lists": "~0.3.9",
     "purescript-refs": "~0.1.2"
-  },
-
-  "resolutions": {
-    "purescript-foldable-traversable": "~0.1.6"
   }
 }
