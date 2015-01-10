@@ -272,6 +272,7 @@ main = do
 
 state :: K.Property _ _ _ State
 state = K.unsafeGlobalize $ K.scan step startingState updates
+  >>= K.debounce 50
 
 startingState :: State
 startingState = emptyState

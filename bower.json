@@ -12,7 +12,7 @@
   ],
   "dependencies": {
     "purescript-html": "~0.6.2",
-    "purescript-kefir": "~0.6.1",
+    "purescript-kefir": "~0.6.3",
     "purescript-strings": "~0.4.2",
     "purescript-foldable-traversable": "~0.2.1",
     "purescript-refs": "~0.1.2"
