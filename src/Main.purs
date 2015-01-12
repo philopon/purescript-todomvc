@@ -11,6 +11,7 @@ import qualified Data.Html.Attributes.Html5 as A
 import qualified Data.Html.Elements.Html5 as E
 import qualified Data.Html.Events as EV
 import qualified Data.Html.Lazy as L
+import Network.Routing.Client
 import DOM
 
 newtype TaskId = TaskId Number
@@ -269,6 +270,17 @@ main = do
   html <- createElement (E.text "loading...")
   getNode html >>= appendBody
   K.onValue state $ \v -> patch (view v) html
+
+  runRouter $ do
+    route0 (exact "active" -/ empty) $ do
+      K.emitAsync updates (ChangeVisibility Active)
+
+    route0 (exact "completed" -/ empty) $ do
+      K.emitAsync updates (ChangeVisibility Completed)
+
+    notFound $ \set -> do
+      set "/"
+      K.emitAsync updates (ChangeVisibility All)
 
 state :: K.Property _ _ _ State
 state = K.unsafeGlobalize $ K.scan step startingState updates

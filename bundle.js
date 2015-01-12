@@ -2,6 +2,7 @@
 var PS = PS || {};
 PS.Prelude = (function () {
     "use strict";
+    function cons(e) {  return function(l) {    return [e].concat(l);  };};
     function showNumberImpl(n) {  return n.toString();};
     function numAdd(n1) {  return function(n2) {    return n1 + n2;  };};
     function numSub(n1) {  return function(n2) {    return n1 - n2;  };};
@@ -82,6 +83,7 @@ PS.Prelude = (function () {
     var $less$dollar$greater = function (dict) {
         return dict["<$>"];
     };
+    var $colon = cons;
     var $div$eq = function (dict) {
         return dict["/="];
     };
@@ -135,6 +137,16 @@ PS.Prelude = (function () {
     var eqString = new Eq(refIneq, refEq);
     var eqNumber = new Eq(refIneq, refEq);
     var eqBoolean = new Eq(refIneq, refEq);
+    var $$const = function (_14) {
+        return function (_15) {
+            return _14;
+        };
+    };
+    var $$void = function (__dict_Functor_9) {
+        return function (fa) {
+            return $less$dollar$greater(__dict_Functor_9)($$const(unit))(fa);
+        };
+    };
     var boolLikeBoolean = new BoolLike(boolAnd, boolNot, boolOr);
     var eqArray = function (__dict_Eq_8) {
         return new Eq(function (xs) {
@@ -188,10 +200,14 @@ PS.Prelude = (function () {
         liftA1: liftA1, 
         pure: pure, 
         "<*>": $less$times$greater, 
+        "void": $$void, 
         "<$>": $less$dollar$greater, 
         show: show, 
+        cons: cons, 
+        ":": $colon, 
         "$": $dollar, 
         "<<<": $less$less$less, 
+        "const": $$const, 
         semigroupoidArr: semigroupoidArr, 
         showNumber: showNumber, 
         numNumber: numNumber, 
@@ -201,6 +217,743 @@ PS.Prelude = (function () {
         eqArray: eqArray, 
         boolLikeBoolean: boolLikeBoolean, 
         semigroupString: semigroupString
+    };
+})();
+var PS = PS || {};
+PS.Network_Routing_Client_Foreign = (function () {
+    "use strict";
+    var Prelude = PS.Prelude;
+    
+var director = (function(exports){
+
+
+//
+// Generated on Sat Dec 06 2014 16:08:09 GMT-0500 (EST) by Charlie Robbins, Paolo Fragomeni & the Contributors (Using Codesurgeon).
+// Version 1.2.4
+//
+
+(function (exports) {
+
+/*
+ * browser.js: Browser specific functionality for director.
+ *
+ * (C) 2011, Charlie Robbins, Paolo Fragomeni, & the Contributors.
+ * MIT LICENSE
+ *
+ */
+
+var dloc = document.location;
+
+function dlocHashEmpty() {
+  // Non-IE browsers return '' when the address bar shows '#'; Director's logic
+  // assumes both mean empty.
+  return dloc.hash === '' || dloc.hash === '#';
+}
+
+var listener = {
+  mode: 'modern',
+  hash: dloc.hash,
+  history: false,
+
+  check: function () {
+    var h = dloc.hash;
+    if (h != this.hash) {
+      this.hash = h;
+      this.onHashChanged();
+    }
+  },
+
+  fire: function () {
+    if (this.mode === 'modern') {
+      this.history === true ? window.onpopstate() : window.onhashchange();
+    }
+    else {
+      this.onHashChanged();
+    }
+  },
+
+  init: function (fn, history) {
+    var self = this;
+    this.history = history;
+
+    if (!Router.listeners) {
+      Router.listeners = [];
+    }
+
+    function onchange(onChangeEvent) {
+      for (var i = 0, l = Router.listeners.length; i < l; i++) {
+        Router.listeners[i](onChangeEvent);
+      }
+    }
+
+    //note IE8 is being counted as 'modern' because it has the hashchange event
+    if ('onhashchange' in window && (document.documentMode === undefined
+      || document.documentMode > 7)) {
+      // At least for now HTML5 history is available for 'modern' browsers only
+      if (this.history === true) {
+        // There is an old bug in Chrome that causes onpopstate to fire even
+        // upon initial page load. Since the handler is run manually in init(),
+        // this would cause Chrome to run it twise. Currently the only
+        // workaround seems to be to set the handler after the initial page load
+        // http://code.google.com/p/chromium/issues/detail?id=63040
+        setTimeout(function() {
+          window.onpopstate = onchange;
+        }, 500);
+      }
+      else {
+        window.onhashchange = onchange;
+      }
+      this.mode = 'modern';
+    }
+    else {
+      //
+      // IE support, based on a concept by Erik Arvidson ...
+      //
+      var frame = document.createElement('iframe');
+      frame.id = 'state-frame';
+      frame.style.display = 'none';
+      document.body.appendChild(frame);
+      this.writeFrame('');
+
+      if ('onpropertychange' in document && 'attachEvent' in document) {
+        document.attachEvent('onpropertychange', function () {
+          if (event.propertyName === 'location') {
+            self.check();
+          }
+        });
+      }
+
+      window.setInterval(function () { self.check(); }, 50);
+
+      this.onHashChanged = onchange;
+      this.mode = 'legacy';
+    }
+
+    Router.listeners.push(fn);
+
+    return this.mode;
+  },
+
+  destroy: function (fn) {
+    if (!Router || !Router.listeners) {
+      return;
+    }
+
+    var listeners = Router.listeners;
+
+    for (var i = listeners.length - 1; i >= 0; i--) {
+      if (listeners[i] === fn) {
+        listeners.splice(i, 1);
+      }
+    }
+  },
+
+  setHash: function (s) {
+    // Mozilla always adds an entry to the history
+    if (this.mode === 'legacy') {
+      this.writeFrame(s);
+    }
+
+    if (this.history === true) {
+      window.history.pushState({}, document.title, s);
+      // Fire an onpopstate event manually since pushing does not obviously
+      // trigger the pop event.
+      this.fire();
+    } else {
+      dloc.hash = (s[0] === '/') ? s : '/' + s;
+    }
+    return this;
+  },
+
+  writeFrame: function (s) {
+    // IE support...
+    var f = document.getElementById('state-frame');
+    var d = f.contentDocument || f.contentWindow.document;
+    d.open();
+    d.write("<script>_hash = '" + s + "'; onload = parent.listener.syncHash;<script>");
+    d.close();
+  },
+
+  syncHash: function () {
+    // IE support...
+    var s = this._hash;
+    if (s != dloc.hash) {
+      dloc.hash = s;
+    }
+    return this;
+  },
+
+  onHashChanged: function () {}
+};
+
+var Router = exports.Router = function (routes) {
+  if (!(this instanceof Router)) return new Router(routes);
+
+  this.params   = {};
+  this.routes   = {};
+  this.methods  = ['on', 'once', 'after', 'before'];
+  this.scope    = [];
+  this._methods = {};
+
+  this._insert = this.insert;
+  this.insert = this.insertEx;
+
+  this.historySupport = (window.history != null ? window.history.pushState : null) != null
+
+  this.configure();
+  this.mount(routes || {});
+};
+
+Router.prototype.init = function (r) {
+  var self = this
+    , routeTo;
+  this.handler = function(onChangeEvent) {
+    var newURL = onChangeEvent && onChangeEvent.newURL || window.location.hash;
+    var url = self.history === true ? self.getPath() : newURL.replace(/.*#/, '');
+    self.dispatch('on', url.charAt(0) === '/' ? url : '/' + url);
+  };
+
+  listener.init(this.handler, this.history);
+
+  if (this.history === false) {
+    if (dlocHashEmpty() && r) {
+      dloc.hash = r;
+    } else if (!dlocHashEmpty()) {
+      self.dispatch('on', '/' + dloc.hash.replace(/^(#\/|#|\/)/, ''));
+    }
+  }
+  else {
+    if (this.convert_hash_in_init) {
+      // Use hash as route
+      routeTo = dlocHashEmpty() && r ? r : !dlocHashEmpty() ? dloc.hash.replace(/^#/, '') : null;
+      if (routeTo) {
+        window.history.replaceState({}, document.title, routeTo);
+      }
+    }
+    else {
+      // Use canonical url
+      routeTo = this.getPath();
+    }
+
+    // Router has been initialized, but due to the chrome bug it will not
+    // yet actually route HTML5 history state changes. Thus, decide if should route.
+    if (routeTo || this.run_in_init === true) {
+      this.handler();
+    }
+  }
+
+  return this;
+};
+
+Router.prototype.explode = function () {
+  var v = this.history === true ? this.getPath() : dloc.hash;
+  if (v.charAt(1) === '/') { v=v.slice(1) }
+  return v.slice(1, v.length).split("/");
+};
+
+Router.prototype.setRoute = function (i, v, val) {
+  var url = this.explode();
+
+  if (typeof i === 'number' && typeof v === 'string') {
+    url[i] = v;
+  }
+  else if (typeof val === 'string') {
+    url.splice(i, v, s);
+  }
+  else {
+    url = [i];
+  }
+
+  listener.setHash(url.join('/'));
+  return url;
+};
+
+//
+// ### function insertEx(method, path, route, parent)
+// #### @method {string} Method to insert the specific `route`.
+// #### @path {Array} Parsed path to insert the `route` at.
+// #### @route {Array|function} Route handlers to insert.
+// #### @parent {Object} **Optional** Parent "routes" to insert into.
+// insert a callback that will only occur once per the matched route.
+//
+Router.prototype.insertEx = function(method, path, route, parent) {
+  if (method === "once") {
+    method = "on";
+    route = function(route) {
+      var once = false;
+      return function() {
+        if (once) return;
+        once = true;
+        return route.apply(this, arguments);
+      };
+    }(route);
+  }
+  return this._insert(method, path, route, parent);
+};
+
+Router.prototype.getRoute = function (v) {
+  var ret = v;
+
+  if (typeof v === "number") {
+    ret = this.explode()[v];
+  }
+  else if (typeof v === "string"){
+    var h = this.explode();
+    ret = h.indexOf(v);
+  }
+  else {
+    ret = this.explode();
+  }
+
+  return ret;
+};
+
+Router.prototype.destroy = function () {
+  listener.destroy(this.handler);
+  return this;
+};
+
+Router.prototype.getPath = function () {
+  var path = window.location.pathname;
+  if (path.substr(0, 1) !== '/') {
+    path = '/' + path;
+  }
+  return path;
+};
+function _every(arr, iterator) {
+  for (var i = 0; i < arr.length; i += 1) {
+    if (iterator(arr[i], i, arr) === false) {
+      return;
+    }
+  }
+}
+
+function _flatten(arr) {
+  var flat = [];
+  for (var i = 0, n = arr.length; i < n; i++) {
+    flat = flat.concat(arr[i]);
+  }
+  return flat;
+}
+
+function _asyncEverySeries(arr, iterator, callback) {
+  if (!arr.length) {
+    return callback();
+  }
+  var completed = 0;
+  (function iterate() {
+    iterator(arr[completed], function(err) {
+      if (err || err === false) {
+        callback(err);
+        callback = function() {};
+      } else {
+        completed += 1;
+        if (completed === arr.length) {
+          callback();
+        } else {
+          iterate();
+        }
+      }
+    });
+  })();
+}
+
+function paramifyString(str, params, mod) {
+  mod = str;
+  for (var param in params) {
+    if (params.hasOwnProperty(param)) {
+      mod = params[param](str);
+      if (mod !== str) {
+        break;
+      }
+    }
+  }
+  return mod === str ? "([._a-zA-Z0-9-]+)" : mod;
+}
+
+function regifyString(str, params) {
+  var matches, last = 0, out = "";
+  while (matches = str.substr(last).match(/[^\w\d\- %@&]*\*[^\w\d\- %@&]*/)) {
+    last = matches.index + matches[0].length;
+    matches[0] = matches[0].replace(/^\*/, "([_.()!\\ %@&a-zA-Z0-9-]+)");
+    out += str.substr(0, matches.index) + matches[0];
+  }
+  str = out += str.substr(last);
+  var captures = str.match(/:([^\/]+)/ig), capture, length;
+  if (captures) {
+    length = captures.length;
+    for (var i = 0; i < length; i++) {
+      capture = captures[i];
+      if (capture.slice(0, 2) === "::") {
+        str = capture.slice(1);
+      } else {
+        str = str.replace(capture, paramifyString(capture, params));
+      }
+    }
+  }
+  return str;
+}
+
+function terminator(routes, delimiter, start, stop) {
+  var last = 0, left = 0, right = 0, start = (start || "(").toString(), stop = (stop || ")").toString(), i;
+  for (i = 0; i < routes.length; i++) {
+    var chunk = routes[i];
+    if (chunk.indexOf(start, last) > chunk.indexOf(stop, last) || ~chunk.indexOf(start, last) && !~chunk.indexOf(stop, last) || !~chunk.indexOf(start, last) && ~chunk.indexOf(stop, last)) {
+      left = chunk.indexOf(start, last);
+      right = chunk.indexOf(stop, last);
+      if (~left && !~right || !~left && ~right) {
+        var tmp = routes.slice(0, (i || 1) + 1).join(delimiter);
+        routes = [ tmp ].concat(routes.slice((i || 1) + 1));
+      }
+      last = (right > left ? right : left) + 1;
+      i = 0;
+    } else {
+      last = 0;
+    }
+  }
+  return routes;
+}
+
+var QUERY_SEPARATOR = /\?.*/;
+
+Router.prototype.configure = function(options) {
+  options = options || {};
+  for (var i = 0; i < this.methods.length; i++) {
+    this._methods[this.methods[i]] = true;
+  }
+  this.recurse = options.recurse || this.recurse || false;
+  this.async = options.async || false;
+  this.delimiter = options.delimiter || "/";
+  this.strict = typeof options.strict === "undefined" ? true : options.strict;
+  this.notfound = options.notfound;
+  this.resource = options.resource;
+  this.history = options.html5history && this.historySupport || false;
+  this.run_in_init = this.history === true && options.run_handler_in_init !== false;
+  this.convert_hash_in_init = this.history === true && options.convert_hash_in_init !== false;
+  this.every = {
+    after: options.after || null,
+    before: options.before || null,
+    on: options.on || null
+  };
+  return this;
+};
+
+Router.prototype.param = function(token, matcher) {
+  if (token[0] !== ":") {
+    token = ":" + token;
+  }
+  var compiled = new RegExp(token, "g");
+  this.params[token] = function(str) {
+    return str.replace(compiled, matcher.source || matcher);
+  };
+  return this;
+};
+
+Router.prototype.on = Router.prototype.route = function(method, path, route) {
+  var self = this;
+  if (!route && typeof path == "function") {
+    route = path;
+    path = method;
+    method = "on";
+  }
+  if (Array.isArray(path)) {
+    return path.forEach(function(p) {
+      self.on(method, p, route);
+    });
+  }
+  if (path.source) {
+    path = path.source.replace(/\\\//ig, "/");
+  }
+  if (Array.isArray(method)) {
+    return method.forEach(function(m) {
+      self.on(m.toLowerCase(), path, route);
+    });
+  }
+  path = path.split(new RegExp(this.delimiter));
+  path = terminator(path, this.delimiter);
+  this.insert(method, this.scope.concat(path), route);
+};
+
+Router.prototype.path = function(path, routesFn) {
+  var self = this, length = this.scope.length;
+  if (path.source) {
+    path = path.source.replace(/\\\//ig, "/");
+  }
+  path = path.split(new RegExp(this.delimiter));
+  path = terminator(path, this.delimiter);
+  this.scope = this.scope.concat(path);
+  routesFn.call(this, this);
+  this.scope.splice(length, path.length);
+};
+
+Router.prototype.dispatch = function(method, path, callback) {
+  var self = this, fns = this.traverse(method, path.replace(QUERY_SEPARATOR, ""), this.routes, ""), invoked = this._invoked, after;
+  this._invoked = true;
+  if (!fns || fns.length === 0) {
+    this.last = [];
+    if (typeof this.notfound === "function") {
+      this.invoke([ this.notfound ], {
+        method: method,
+        path: path
+      }, callback);
+    }
+    return false;
+  }
+  if (this.recurse === "forward") {
+    fns = fns.reverse();
+  }
+  function updateAndInvoke() {
+    self.last = fns.after;
+    self.invoke(self.runlist(fns), self, callback);
+  }
+  after = this.every && this.every.after ? [ this.every.after ].concat(this.last) : [ this.last ];
+  if (after && after.length > 0 && invoked) {
+    if (this.async) {
+      this.invoke(after, this, updateAndInvoke);
+    } else {
+      this.invoke(after, this);
+      updateAndInvoke();
+    }
+    return true;
+  }
+  updateAndInvoke();
+  return true;
+};
+
+Router.prototype.invoke = function(fns, thisArg, callback) {
+  var self = this;
+  var apply;
+  if (this.async) {
+    apply = function(fn, next) {
+      if (Array.isArray(fn)) {
+        return _asyncEverySeries(fn, apply, next);
+      } else if (typeof fn == "function") {
+        fn.apply(thisArg, (fns.captures || []).concat(next));
+      }
+    };
+    _asyncEverySeries(fns, apply, function() {
+      if (callback) {
+        callback.apply(thisArg, arguments);
+      }
+    });
+  } else {
+    apply = function(fn) {
+      if (Array.isArray(fn)) {
+        return _every(fn, apply);
+      } else if (typeof fn === "function") {
+        return fn.apply(thisArg, fns.captures || []);
+      } else if (typeof fn === "string" && self.resource) {
+        self.resource[fn].apply(thisArg, fns.captures || []);
+      }
+    };
+    _every(fns, apply);
+  }
+};
+
+Router.prototype.traverse = function(method, path, routes, regexp, filter) {
+  var fns = [], current, exact, match, next, that;
+  function filterRoutes(routes) {
+    if (!filter) {
+      return routes;
+    }
+    function deepCopy(source) {
+      var result = [];
+      for (var i = 0; i < source.length; i++) {
+        result[i] = Array.isArray(source[i]) ? deepCopy(source[i]) : source[i];
+      }
+      return result;
+    }
+    function applyFilter(fns) {
+      for (var i = fns.length - 1; i >= 0; i--) {
+        if (Array.isArray(fns[i])) {
+          applyFilter(fns[i]);
+          if (fns[i].length === 0) {
+            fns.splice(i, 1);
+          }
+        } else {
+          if (!filter(fns[i])) {
+            fns.splice(i, 1);
+          }
+        }
+      }
+    }
+    var newRoutes = deepCopy(routes);
+    newRoutes.matched = routes.matched;
+    newRoutes.captures = routes.captures;
+    newRoutes.after = routes.after.filter(filter);
+    applyFilter(newRoutes);
+    return newRoutes;
+  }
+  if (path === this.delimiter && routes[method]) {
+    next = [ [ routes.before, routes[method] ].filter(Boolean) ];
+    next.after = [ routes.after ].filter(Boolean);
+    next.matched = true;
+    next.captures = [];
+    return filterRoutes(next);
+  }
+  for (var r in routes) {
+    if (routes.hasOwnProperty(r) && (!this._methods[r] || this._methods[r] && typeof routes[r] === "object" && !Array.isArray(routes[r]))) {
+      current = exact = regexp + this.delimiter + r;
+      if (!this.strict) {
+        exact += "[" + this.delimiter + "]?";
+      }
+      match = path.match(new RegExp("^" + exact));
+      if (!match) {
+        continue;
+      }
+      if (match[0] && match[0] == path && routes[r][method]) {
+        next = [ [ routes[r].before, routes[r][method] ].filter(Boolean) ];
+        next.after = [ routes[r].after ].filter(Boolean);
+        next.matched = true;
+        next.captures = match.slice(1);
+        if (this.recurse && routes === this.routes) {
+          next.push([ routes.before, routes.on ].filter(Boolean));
+          next.after = next.after.concat([ routes.after ].filter(Boolean));
+        }
+        return filterRoutes(next);
+      }
+      next = this.traverse(method, path, routes[r], current);
+      if (next.matched) {
+        if (next.length > 0) {
+          fns = fns.concat(next);
+        }
+        if (this.recurse) {
+          fns.push([ routes[r].before, routes[r].on ].filter(Boolean));
+          next.after = next.after.concat([ routes[r].after ].filter(Boolean));
+          if (routes === this.routes) {
+            fns.push([ routes["before"], routes["on"] ].filter(Boolean));
+            next.after = next.after.concat([ routes["after"] ].filter(Boolean));
+          }
+        }
+        fns.matched = true;
+        fns.captures = next.captures;
+        fns.after = next.after;
+        return filterRoutes(fns);
+      }
+    }
+  }
+  return false;
+};
+
+Router.prototype.insert = function(method, path, route, parent) {
+  var methodType, parentType, isArray, nested, part;
+  path = path.filter(function(p) {
+    return p && p.length > 0;
+  });
+  parent = parent || this.routes;
+  part = path.shift();
+  if (/\:|\*/.test(part) && !/\\d|\\w/.test(part)) {
+    part = regifyString(part, this.params);
+  }
+  if (path.length > 0) {
+    parent[part] = parent[part] || {};
+    return this.insert(method, path, route, parent[part]);
+  }
+  if (!part && !path.length && parent === this.routes) {
+    methodType = typeof parent[method];
+    switch (methodType) {
+     case "function":
+      parent[method] = [ parent[method], route ];
+      return;
+     case "object":
+      parent[method].push(route);
+      return;
+     case "undefined":
+      parent[method] = route;
+      return;
+    }
+    return;
+  }
+  parentType = typeof parent[part];
+  isArray = Array.isArray(parent[part]);
+  if (parent[part] && !isArray && parentType == "object") {
+    methodType = typeof parent[part][method];
+    switch (methodType) {
+     case "function":
+      parent[part][method] = [ parent[part][method], route ];
+      return;
+     case "object":
+      parent[part][method].push(route);
+      return;
+     case "undefined":
+      parent[part][method] = route;
+      return;
+    }
+  } else if (parentType == "undefined") {
+    nested = {};
+    nested[method] = route;
+    parent[part] = nested;
+    return;
+  }
+  throw new Error("Invalid route context: " + parentType);
+};
+
+
+
+Router.prototype.extend = function(methods) {
+  var self = this, len = methods.length, i;
+  function extend(method) {
+    self._methods[method] = true;
+    self[method] = function() {
+      var extra = arguments.length === 1 ? [ method, "" ] : [ method ];
+      self.on.apply(self, extra.concat(Array.prototype.slice.call(arguments)));
+    };
+  }
+  for (i = 0; i < len; i++) {
+    extend(methods[i]);
+  }
+};
+
+Router.prototype.runlist = function(fns) {
+  var runlist = this.every && this.every.before ? [ this.every.before ].concat(_flatten(fns)) : _flatten(fns);
+  if (this.every && this.every.on) {
+    runlist.push(this.every.on);
+  }
+  runlist.captures = fns.captures;
+  runlist.source = fns.source;
+  return runlist;
+};
+
+Router.prototype.mount = function(routes, path) {
+  if (!routes || typeof routes !== "object" || Array.isArray(routes)) {
+    return;
+  }
+  var self = this;
+  path = path || [];
+  if (!Array.isArray(path)) {
+    path = path.split(self.delimiter);
+  }
+  function insertOrMount(route, local) {
+    var rename = route, parts = route.split(self.delimiter), routeType = typeof routes[route], isRoute = parts[0] === "" || !self._methods[parts[0]], event = isRoute ? "on" : rename;
+    if (isRoute) {
+      rename = rename.slice((rename.match(new RegExp("^" + self.delimiter)) || [ "" ])[0].length);
+      parts.shift();
+    }
+    if (isRoute && routeType === "object" && !Array.isArray(routes[route])) {
+      local = local.concat(parts);
+      self.mount(routes[route], local);
+      return;
+    }
+    if (isRoute) {
+      local = local.concat(rename.split(self.delimiter));
+      local = terminator(local, self.delimiter);
+    }
+    self.insert(event, local, routes[route]);
+  }
+  for (var route in routes) {
+    if (routes.hasOwnProperty(route)) {
+      insertOrMount(route, path.slice(0));
+    }
+  }
+};
+
+
+
+}(typeof exports === "object" ? exports : window));
+return exports.Router;
+}({}));;
+    return {
+        director: director
     };
 })();
 var PS = PS || {};
@@ -4307,27 +5060,27 @@ function unsafeCoerce(a) {
     };
     var namespace = 1;
     var key = 2;
-    var getNamespaceString = function (_31) {
-        if (_31 instanceof Namespace) {
-            return _31.value0;
+    var getNamespaceString = function (_39) {
+        if (_39 instanceof Namespace) {
+            return _39.value0;
         };
         throw new Error("Failed pattern match");
     };
-    var getKeyString = function (_30) {
-        if (_30 instanceof Key) {
-            return _30.value0;
+    var getKeyString = function (_38) {
+        if (_38 instanceof Key) {
+            return _38.value0;
         };
         throw new Error("Failed pattern match");
     };
-    var getAttrValue = function (_29) {
-        if (_29 instanceof Attribute) {
-            return _29.value1;
+    var getAttrValue = function (_37) {
+        if (_37 instanceof Attribute) {
+            return _37.value1;
         };
         throw new Error("Failed pattern match");
     };
-    var getAttrKey = function (_28) {
-        if (_28 instanceof Attribute) {
-            return _28.value0;
+    var getAttrKey = function (_36) {
+        if (_36 instanceof Attribute) {
+            return _36.value0;
         };
         throw new Error("Failed pattern match");
     };
@@ -4338,14 +5091,14 @@ function unsafeCoerce(a) {
         namespace: namespace, 
         key: key
     };
-    var attrType = function (_27) {
-        if (_27 instanceof Attribute) {
+    var attrType = function (_35) {
+        if (_35 instanceof Attribute) {
             return attriute;
         };
-        if (_27 instanceof Namespace) {
+        if (_35 instanceof Namespace) {
             return namespace;
         };
-        if (_27 instanceof Key) {
+        if (_35 instanceof Key) {
             return key;
         };
         throw new Error("Failed pattern match");
@@ -4399,6 +5152,89 @@ PS.Control_Monad_Eff = (function () {
     };
 })();
 var PS = PS || {};
+PS.Control_Monad = (function () {
+    "use strict";
+    var Prelude = PS.Prelude;
+    var when = function (__dict_Monad_17) {
+        return function (_56) {
+            return function (_57) {
+                if (_56) {
+                    return _57;
+                };
+                if (!_56) {
+                    return Prelude["return"](__dict_Monad_17)(Prelude.unit);
+                };
+                throw new Error("Failed pattern match");
+            };
+        };
+    };
+    return {
+        when: when
+    };
+})();
+var PS = PS || {};
+PS.Data_Maybe = (function () {
+    "use strict";
+    var Prelude = PS.Prelude;
+    var Control_Alt = PS.Control_Alt;
+    var Control_Alternative = PS.Control_Alternative;
+    var Control_Extend = PS.Control_Extend;
+    var Control_MonadPlus = PS.Control_MonadPlus;
+    var Control_Plus = PS.Control_Plus;
+    var Nothing = (function () {
+        function Nothing() {
+
+        };
+        Nothing.value = new Nothing();
+        return Nothing;
+    })();
+    var Just = (function () {
+        function Just(value0) {
+            this.value0 = value0;
+        };
+        Just.create = function (value0) {
+            return new Just(value0);
+        };
+        return Just;
+    })();
+    return {
+        Nothing: Nothing, 
+        Just: Just
+    };
+})();
+var PS = PS || {};
+PS.Data_Array = (function () {
+    "use strict";
+    var Prelude = PS.Prelude;
+    var Data_Maybe = PS.Data_Maybe;
+    var Control_Alt = PS.Control_Alt;
+    var Control_Plus = PS.Control_Plus;
+    var Control_Alternative = PS.Control_Alternative;
+    var Control_MonadPlus = PS.Control_MonadPlus;
+    var Prelude_Unsafe = PS.Prelude_Unsafe;
+    function length (xs) {  return xs.length;};
+    function append (l1) {  return function (l2) {    return l1.concat(l2);  };};
+    function map (f) {  return function (arr) {    var l = arr.length;    var result = new Array(l);    for (var i = 0; i < l; i++) {      result[i] = f(arr[i]);    }    return result;  };};
+    function filter (f) {  return function (arr) {    var n = 0;    var result = [];    for (var i = 0, l = arr.length; i < l; i++) {      if (f(arr[i])) {        result[n++] = arr[i];      }    }    return result;  };};
+    var semigroupArray = new Prelude.Semigroup(append);
+    var $$null = function (_99) {
+        if (_99.length === 0) {
+            return true;
+        };
+        return false;
+    };
+    var functorArray = new Prelude.Functor(map);
+    return {
+        filter: filter, 
+        append: append, 
+        length: length, 
+        map: map, 
+        "null": $$null, 
+        functorArray: functorArray, 
+        semigroupArray: semigroupArray
+    };
+})();
+var PS = PS || {};
 PS.Data_Html_Attributes = (function () {
     "use strict";
     var Data_Html_Internal_Attributes = PS.Data_Html_Internal_Attributes;
@@ -4406,28 +5242,32 @@ PS.Data_Html_Attributes = (function () {
     var Control_Monad_Eff = PS.Control_Monad_Eff;
     var Data_Html_Internal_VirtualDOM = PS.Data_Html_Internal_VirtualDOM;
     var Data_Function = PS.Data_Function;
+    var Data_Array = PS.Data_Array;
     
 function mkEvent (fn) {
   return function mkEvHook_callback(ev){
     fn(ev)();
   }
 };
+    var Attribute = function (x) {
+        return x;
+    };
     var style = function (v) {
-        return Data_Html_Internal_Attributes.attribute("style")(Data_Html_Internal_Attributes.unsafeCoerce(v));
+        return [ Data_Html_Internal_Attributes.attribute("style")(Data_Html_Internal_Attributes.unsafeCoerce(v)) ];
     };
     var stringAttribute = function (n) {
         return function (v) {
-            return Data_Html_Internal_Attributes.attribute(n)(Data_Html_Internal_Attributes.unsafeCoerce(v));
+            return [ Data_Html_Internal_Attributes.attribute(n)(Data_Html_Internal_Attributes.unsafeCoerce(v)) ];
         };
     };
     var on_ = function (ev) {
         return function (fn) {
-            return Data_Html_Internal_Attributes.attribute("on" + ev)(mkEvent(fn));
+            return [ Data_Html_Internal_Attributes.attribute("on" + ev)(mkEvent(fn)) ];
         };
     };
     var booleanAttribute = function (n) {
         return function (v) {
-            return Data_Html_Internal_Attributes.attribute(n)(Data_Html_Internal_Attributes.unsafeCoerce(v));
+            return [ Data_Html_Internal_Attributes.attribute(n)(Data_Html_Internal_Attributes.unsafeCoerce(v)) ];
         };
     };
     return {
@@ -4498,22 +5338,6 @@ PS.Data_Html_Attributes_Html5 = (function () {
     };
 })();
 var PS = PS || {};
-PS.Data_Html_Internal_Events = (function () {
-    "use strict";
-    var Prelude = PS.Prelude;
-    var Data_Html_Attributes = PS.Data_Html_Attributes;
-    var MouseButtonEvent = function (x) {
-        return x;
-    };
-    var KeyEvent = function (x) {
-        return x;
-    };
-    return {
-        MouseButtonEvent: MouseButtonEvent, 
-        KeyEvent: KeyEvent
-    };
-})();
-var PS = PS || {};
 PS.Data_Html_Elements = (function () {
     "use strict";
     var Data_Function = PS.Data_Function;
@@ -4526,19 +5350,22 @@ PS.Data_Html_Elements = (function () {
     var Control_Monad_Eff_Ref = PS.Control_Monad_Eff_Ref;
     
 function vnodeImpl (fn, name, attrs, children) {
-  var props     = {}
+  var attrTypes = fn.attrTypes
+    , props     = {}
     , key       = undefined
     , namespace = undefined;
 
-  for(var i = 0; i < attrs.length; i++) {
-    var attr = attrs[i];
-    var typ  = fn.attrType(attr);
-    if(typ === fn.attrTypes.attribute) {
-      props[fn.attrKey(attr)] = fn.attrVal(attr);
-    } else if (typ === fn.attrTypes.key) {
-      key = fn.getKey(attr);
-    } else {
-      namespace = fn.getNs(attr);
+  for(var i = 0, li = attrs.length; i < li; i++) {
+    for(var j = 0, lj = attrs[i].length; j < lj; j++){
+      var attr = attrs[i][j];
+      var typ  = fn.attrType(attr);
+      if(typ === attrTypes.attribute) {
+        props[fn.attrKey(attr)] = fn.attrVal(attr);
+      } else if (typ === attrTypes.key) {
+        key = fn.getKey(attr);
+      } else {
+        namespace = fn.getNs(attr);
+      }
     }
   }
 
@@ -4681,56 +5508,19 @@ PS.Data_Html_Elements_Html5 = (function () {
     };
 })();
 var PS = PS || {};
-PS.Control_Monad = (function () {
+PS.Data_Html_Internal_Events = (function () {
     "use strict";
     var Prelude = PS.Prelude;
-    var when = function (__dict_Monad_17) {
-        return function (_48) {
-            return function (_49) {
-                if (_48) {
-                    return _49;
-                };
-                if (!_48) {
-                    return Prelude["return"](__dict_Monad_17)(Prelude.unit);
-                };
-                throw new Error("Failed pattern match");
-            };
-        };
+    var Data_Html_Attributes = PS.Data_Html_Attributes;
+    var MouseButtonEvent = function (x) {
+        return x;
+    };
+    var KeyEvent = function (x) {
+        return x;
     };
     return {
-        when: when
-    };
-})();
-var PS = PS || {};
-PS.Data_Array = (function () {
-    "use strict";
-    var Prelude = PS.Prelude;
-    var Data_Maybe = PS.Data_Maybe;
-    var Control_Alt = PS.Control_Alt;
-    var Control_Plus = PS.Control_Plus;
-    var Control_Alternative = PS.Control_Alternative;
-    var Control_MonadPlus = PS.Control_MonadPlus;
-    var Prelude_Unsafe = PS.Prelude_Unsafe;
-    function length (xs) {  return xs.length;};
-    function append (l1) {  return function (l2) {    return l1.concat(l2);  };};
-    function map (f) {  return function (arr) {    var l = arr.length;    var result = new Array(l);    for (var i = 0; i < l; i++) {      result[i] = f(arr[i]);    }    return result;  };};
-    function filter (f) {  return function (arr) {    var n = 0;    var result = [];    for (var i = 0, l = arr.length; i < l; i++) {      if (f(arr[i])) {        result[n++] = arr[i];      }    }    return result;  };};
-    var semigroupArray = new Prelude.Semigroup(append);
-    var $$null = function (_91) {
-        if (_91.length === 0) {
-            return true;
-        };
-        return false;
-    };
-    var functorArray = new Prelude.Functor(map);
-    return {
-        filter: filter, 
-        append: append, 
-        length: length, 
-        map: map, 
-        "null": $$null, 
-        functorArray: functorArray, 
-        semigroupArray: semigroupArray
+        MouseButtonEvent: MouseButtonEvent, 
+        KeyEvent: KeyEvent
     };
 })();
 var PS = PS || {};
@@ -4945,10 +5735,18 @@ PS.Data_String = (function () {
       return s.length;
     }
     ;
+    
+    function joinWith(s) {
+      return function(xs) {
+        return xs.join(s);
+      };
+    }
+    ;
     var $$null = function (s) {
         return length(s) === 0;
     };
     return {
+        joinWith: joinWith, 
         length: length, 
         "null": $$null
     };
@@ -5094,6 +5892,261 @@ function debounceImpl(d, stream){
     };
 })();
 var PS = PS || {};
+PS.Network_Routing_Client = (function () {
+    "use strict";
+    var Prelude = PS.Prelude;
+    var Network_Routing_Client_Foreign = PS.Network_Routing_Client_Foreign;
+    var Data_Function = PS.Data_Function;
+    var Data_String = PS.Data_String;
+    var Control_Monad_Eff = PS.Control_Monad_Eff;
+    var Data_Array = PS.Data_Array;
+    var Data_Maybe = PS.Data_Maybe;
+    
+function newRouter(director){
+  return function NewRouterEff(){
+    return director();
+  }
+};
+    
+function initRouter(d){
+  return function InitRouterEff(){
+    d.init('/');
+  }
+};
+    
+function configureImpl(r, opts){
+  return function ConfigureEff(){
+    r.configure({'html5history': opts.historyAPI, 'notfound': opts.notFound});
+  }
+};
+    
+function unsafeCoerce(a){
+  return a;
+};
+    
+function routeImpl(d,p,f){
+  return function RouteEff(){
+    d.on(p,f);
+  }
+};
+    
+function wrap0(f){
+  return function Wrap0(){return f();}
+};
+    
+function setRouteImpl(d, p){
+  return function SetRouteEff(){
+    d.setRoute(p);
+  }
+};
+    var Exact = (function () {
+        function Exact(value0) {
+            this.value0 = value0;
+        };
+        Exact.create = function (value0) {
+            return new Exact(value0);
+        };
+        return Exact;
+    })();
+    var Regex = (function () {
+        function Regex(value0) {
+            this.value0 = value0;
+        };
+        Regex.create = function (value0) {
+            return new Regex(value0);
+        };
+        return Regex;
+    })();
+    var Param = (function () {
+        function Param(value0) {
+            this.value0 = value0;
+        };
+        Param.create = function (value0) {
+            return new Param(value0);
+        };
+        return Param;
+    })();
+    var Any = (function () {
+        function Any() {
+
+        };
+        Any.value = new Any();
+        return Any;
+    })();
+    var Pathes = function (x) {
+        return x;
+    };
+    var RoutingM = function (x) {
+        return x;
+    };
+    var $minus$div = function (_280) {
+        return function (_281) {
+            return Prelude[":"](unsafeCoerce(_280))(_281);
+        };
+    };
+    var runRouter = function (_277) {
+        return function __do() {
+            var _10 = newRouter(Network_Routing_Client_Foreign.director)();
+            var _9 = _277({
+                variableIndex: 0, 
+                routerInstance: _10, 
+                historyAPI: false, 
+                notFound: Data_Maybe.Nothing.value
+            })();
+            (function () {
+                if (_9.s.notFound instanceof Data_Maybe.Nothing) {
+                    return configureImpl(_10, {
+                        historyAPI: _9.s.historyAPI
+                    });
+                };
+                if (_9.s.notFound instanceof Data_Maybe.Just) {
+                    return configureImpl(_10, {
+                        historyAPI: _9.s.historyAPI, 
+                        notFound: _9.s.notFound.value0(function (s_1) {
+                            return setRouteImpl(_10, s_1);
+                        })
+                    });
+                };
+                throw new Error("Failed pattern match");
+            })()();
+            initRouter(_10)();
+            return function (s_1) {
+                return setRouteImpl(_10, s_1);
+            };
+        };
+    };
+    var pathToString = function (_278) {
+        if (_278 instanceof Exact) {
+            return _278.value0;
+        };
+        if (_278 instanceof Regex) {
+            return "(" + (_278.value0 + ")");
+        };
+        if (_278 instanceof Param) {
+            return _278.value0;
+        };
+        if (_278 instanceof Any) {
+            return ":_";
+        };
+        throw new Error("Failed pattern match");
+    };
+    var pathesToString = function (_279) {
+        return "/" + Data_String.joinWith("/")(Prelude["<$>"](Data_Array.functorArray)(pathToString)(_279));
+    };
+    var modifyState = function (f) {
+        return RoutingM(function (s) {
+            return Prelude["return"](Control_Monad_Eff.monadEff)({
+                a: Prelude.unit, 
+                s: f(s)
+            });
+        });
+    };
+    var notFound = function (m) {
+        return modifyState(function (s) {
+            var _333 = {};
+            for (var _334 in s) {
+                if (s.hasOwnProperty(_334)) {
+                    _333[_334] = s[_334];
+                };
+            };
+            _333.notFound = Data_Maybe.Just.create(function (s_1) {
+                return Prelude["void"](Control_Monad_Eff.functorEff)(m(s_1));
+            });
+            return _333;
+        });
+    };
+    var liftRoutingM = function (m) {
+        return RoutingM(function (s) {
+            return function __do() {
+                var a = m();
+                return {
+                    a: a, 
+                    s: s
+                };
+            };
+        });
+    };
+    var getState = RoutingM(function (s) {
+        return Prelude["return"](Control_Monad_Eff.monadEff)({
+            a: s, 
+            s: s
+        });
+    });
+    var functorRoutingM = new Prelude.Functor(function (_284) {
+        return function (_285) {
+            return RoutingM(function (s) {
+                return function __do() {
+                    var n = _285(s)();
+                    return {
+                        a: _284(n.a), 
+                        s: n.s
+                    };
+                };
+            });
+        };
+    });
+    var exact = Exact.create;
+    var empty = [  ];
+    var applyRoutingM = new Prelude.Apply(function (_286) {
+        return function (_287) {
+            return RoutingM(function (s) {
+                return function __do() {
+                    var _6 = _286(s)();
+                    var _5 = _287(_6.s)();
+                    return {
+                        a: _6.a(_5.a), 
+                        s: _5.s
+                    };
+                };
+            });
+        };
+    }, function () {
+        return functorRoutingM;
+    });
+    var bindRoutingM = new Prelude.Bind(function (_288) {
+        return function (_289) {
+            return RoutingM(function (s) {
+                return function __do() {
+                    var _8 = _288(s)();
+                    var _7 = _289(_8.a);
+                    return _7(_8.s)();
+                };
+            });
+        };
+    }, function () {
+        return applyRoutingM;
+    });
+    var route = function (p) {
+        return function (f) {
+            return Prelude[">>="](bindRoutingM)(getState)(function (_12) {
+                return liftRoutingM(routeImpl(_12.routerInstance, pathesToString(p), f));
+            });
+        };
+    };
+    var routes0 = function (p) {
+        return function (f) {
+            return route(p)(Prelude["<$>"](Data_Array.functorArray)(wrap0)(f));
+        };
+    };
+    var route0 = function (p) {
+        return function (f) {
+            return routes0(p)([ f ]);
+        };
+    };
+    return {
+        route0: route0, 
+        routes0: routes0, 
+        "-/": $minus$div, 
+        exact: exact, 
+        empty: empty, 
+        notFound: notFound, 
+        runRouter: runRouter, 
+        functorRoutingM: functorRoutingM, 
+        applyRoutingM: applyRoutingM, 
+        bindRoutingM: bindRoutingM
+    };
+})();
+var PS = PS || {};
 PS.Main = (function () {
     "use strict";
     var Prelude = PS.Prelude;
@@ -5107,6 +6160,7 @@ PS.Main = (function () {
     var FRP_Kefir = PS.FRP_Kefir;
     var Data_Foldable = PS.Data_Foldable;
     var Data_Html = PS.Data_Html;
+    var Network_Routing_Client = PS.Network_Routing_Client;
     var Control_Monad_Eff = PS.Control_Monad_Eff;
     var DOM = PS.DOM;
     
@@ -5229,20 +6283,20 @@ function appendBody(node) {
         return x;
     };
     var updates = FRP_Kefir.unsafeGlobalize(FRP_Kefir.emitter);
-    var unTaskId = function (_268) {
-        return _268;
+    var unTaskId = function (_291) {
+        return _291;
     };
-    var succTaskId = function (_267) {
-        return _267 + 1;
+    var succTaskId = function (_290) {
+        return _290 + 1;
     };
-    var showVisibility = new Prelude.Show(function (_273) {
-        if (_273 instanceof All) {
+    var showVisibility = new Prelude.Show(function (_296) {
+        if (_296 instanceof All) {
             return "All";
         };
-        if (_273 instanceof Completed) {
+        if (_296 instanceof Completed) {
             return "Completed";
         };
-        if (_273 instanceof Active) {
+        if (_296 instanceof Active) {
             return "Active";
         };
         throw new Error("Failed pattern match");
@@ -5302,11 +6356,11 @@ function appendBody(node) {
                 throw new Error("Failed pattern match");
             };
             var cssVisibility = (function () {
-                var _302 = Data_Array["null"](tasks);
-                if (_302) {
+                var _352 = Data_Array["null"](tasks);
+                if (_352) {
                     return "hidden";
                 };
-                if (!_302) {
+                if (!_352) {
                     return "visible";
                 };
                 throw new Error("Failed pattern match");
@@ -5336,15 +6390,15 @@ function appendBody(node) {
         return function (b) {
             return !Prelude["=="](eqVisibility)(a)(b);
         };
-    }, function (_271) {
-        return function (_272) {
-            if (_271 instanceof All && _272 instanceof All) {
+    }, function (_294) {
+        return function (_295) {
+            if (_294 instanceof All && _295 instanceof All) {
                 return true;
             };
-            if (_271 instanceof Completed && _272 instanceof Completed) {
+            if (_294 instanceof Completed && _295 instanceof Completed) {
                 return true;
             };
-            if (_271 instanceof Active && _272 instanceof Active) {
+            if (_294 instanceof Active && _295 instanceof Active) {
                 return true;
             };
             return false;
@@ -5354,11 +6408,11 @@ function appendBody(node) {
         return function (visibility) {
             return function (actualVisibility) {
                 var className = (function () {
-                    var _305 = Prelude["=="](eqVisibility)(visibility)(actualVisibility);
-                    if (_305) {
+                    var _355 = Prelude["=="](eqVisibility)(visibility)(actualVisibility);
+                    if (_355) {
                         return "selected";
                     };
-                    if (!_305) {
+                    if (!_355) {
                         return "";
                     };
                     throw new Error("Failed pattern match");
@@ -5373,18 +6427,18 @@ function appendBody(node) {
         return function (b) {
             return !Prelude["=="](eqTaskId)(a)(b);
         };
-    }, function (_269) {
-        return function (_270) {
-            return _269 === _270;
+    }, function (_292) {
+        return function (_293) {
+            return _292 === _293;
         };
     });
     var eqTaskWrapper = new Prelude.Eq(function (a) {
         return function (b) {
             return !Prelude["=="](eqTaskWrapper)(a)(b);
         };
-    }, function (_274) {
-        return function (_275) {
-            return Prelude["=="](eqTaskId)(_274.id)(_275.id) && (_274.editing === _275.editing && (_274.completed === _275.completed && _274.description === _275.description));
+    }, function (_297) {
+        return function (_298) {
+            return Prelude["=="](eqTaskId)(_297.id)(_298.id) && (_297.editing === _298.editing && (_297.completed === _298.completed && _297.description === _298.description));
         };
     });
     var sameVisTask = function (a) {
@@ -5395,170 +6449,170 @@ function appendBody(node) {
     var step = function (state_1) {
         return function (update) {
             if (update instanceof Add) {
-                var _312 = {};
-                for (var _313 in state_1) {
-                    if (state_1.hasOwnProperty(_313)) {
-                        _312[_313] = state_1[_313];
+                var _362 = {};
+                for (var _363 in state_1) {
+                    if (state_1.hasOwnProperty(_363)) {
+                        _362[_363] = state_1[_363];
                     };
                 };
-                _312.uid = succTaskId(state_1.uid);
-                _312.field = "";
-                _312.tasks = (function () {
-                    var _311 = Data_String["null"](state_1.field);
-                    if (_311) {
+                _362.uid = succTaskId(state_1.uid);
+                _362.field = "";
+                _362.tasks = (function () {
+                    var _361 = Data_String["null"](state_1.field);
+                    if (_361) {
                         return state_1.tasks;
                     };
-                    if (!_311) {
+                    if (!_361) {
                         return Prelude["++"](Data_Array.semigroupArray)(state_1.tasks)([ newTask(state_1.field)(state_1.uid) ]);
                     };
                     throw new Error("Failed pattern match");
                 })();
-                return _312;
+                return _362;
             };
             if (update instanceof UpdateField) {
-                var _314 = {};
-                for (var _315 in state_1) {
-                    if (state_1.hasOwnProperty(_315)) {
-                        _314[_315] = state_1[_315];
+                var _364 = {};
+                for (var _365 in state_1) {
+                    if (state_1.hasOwnProperty(_365)) {
+                        _364[_365] = state_1[_365];
                     };
                 };
-                _314.field = update.value0;
-                return _314;
+                _364.field = update.value0;
+                return _364;
             };
             if (update instanceof EditingTask) {
                 var stepTask = function (t) {
-                    var _317 = Prelude["=="](eqTaskId)(t.id)(update.value0);
-                    if (_317) {
-                        var _318 = {};
-                        for (var _319 in t) {
-                            if (t.hasOwnProperty(_319)) {
-                                _318[_319] = t[_319];
+                    var _367 = Prelude["=="](eqTaskId)(t.id)(update.value0);
+                    if (_367) {
+                        var _368 = {};
+                        for (var _369 in t) {
+                            if (t.hasOwnProperty(_369)) {
+                                _368[_369] = t[_369];
                             };
                         };
-                        _318.editing = update.value1;
-                        return _318;
+                        _368.editing = update.value1;
+                        return _368;
                     };
-                    if (!_317) {
+                    if (!_367) {
                         return t;
                     };
                     throw new Error("Failed pattern match");
                 };
-                var _320 = {};
-                for (var _321 in state_1) {
-                    if (state_1.hasOwnProperty(_321)) {
-                        _320[_321] = state_1[_321];
+                var _370 = {};
+                for (var _371 in state_1) {
+                    if (state_1.hasOwnProperty(_371)) {
+                        _370[_371] = state_1[_371];
                     };
                 };
-                _320.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
-                return _320;
+                _370.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                return _370;
             };
             if (update instanceof UpdateTask) {
                 var stepTask = function (t) {
-                    var _324 = Prelude["=="](eqTaskId)(t.id)(update.value0);
-                    if (_324) {
-                        var _325 = {};
-                        for (var _326 in t) {
-                            if (t.hasOwnProperty(_326)) {
-                                _325[_326] = t[_326];
+                    var _374 = Prelude["=="](eqTaskId)(t.id)(update.value0);
+                    if (_374) {
+                        var _375 = {};
+                        for (var _376 in t) {
+                            if (t.hasOwnProperty(_376)) {
+                                _375[_376] = t[_376];
                             };
                         };
-                        _325.description = update.value1;
-                        return _325;
+                        _375.description = update.value1;
+                        return _375;
                     };
-                    if (!_324) {
+                    if (!_374) {
                         return t;
                     };
                     throw new Error("Failed pattern match");
                 };
-                var _327 = {};
-                for (var _328 in state_1) {
-                    if (state_1.hasOwnProperty(_328)) {
-                        _327[_328] = state_1[_328];
+                var _377 = {};
+                for (var _378 in state_1) {
+                    if (state_1.hasOwnProperty(_378)) {
+                        _377[_378] = state_1[_378];
                     };
                 };
-                _327.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
-                return _327;
+                _377.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                return _377;
             };
             if (update instanceof Delete) {
-                var _331 = {};
-                for (var _332 in state_1) {
-                    if (state_1.hasOwnProperty(_332)) {
-                        _331[_332] = state_1[_332];
+                var _381 = {};
+                for (var _382 in state_1) {
+                    if (state_1.hasOwnProperty(_382)) {
+                        _381[_382] = state_1[_382];
                     };
                 };
-                _331.tasks = Data_Array.filter(function (t) {
+                _381.tasks = Data_Array.filter(function (t) {
                     return Prelude["/="](eqTaskId)(t.id)(update.value0);
                 })(state_1.tasks);
-                return _331;
+                return _381;
             };
             if (update instanceof DeleteComplete) {
-                var _334 = {};
-                for (var _335 in state_1) {
-                    if (state_1.hasOwnProperty(_335)) {
-                        _334[_335] = state_1[_335];
+                var _384 = {};
+                for (var _385 in state_1) {
+                    if (state_1.hasOwnProperty(_385)) {
+                        _384[_385] = state_1[_385];
                     };
                 };
-                _334.tasks = Data_Array.filter(function (t) {
+                _384.tasks = Data_Array.filter(function (t) {
                     return !t.completed;
                 })(state_1.tasks);
-                return _334;
+                return _384;
             };
             if (update instanceof Check) {
                 var stepTask = function (t) {
-                    var _336 = Prelude["=="](eqTaskId)(t.id)(update.value0);
-                    if (_336) {
-                        var _337 = {};
-                        for (var _338 in t) {
-                            if (t.hasOwnProperty(_338)) {
-                                _337[_338] = t[_338];
+                    var _386 = Prelude["=="](eqTaskId)(t.id)(update.value0);
+                    if (_386) {
+                        var _387 = {};
+                        for (var _388 in t) {
+                            if (t.hasOwnProperty(_388)) {
+                                _387[_388] = t[_388];
                             };
                         };
-                        _337.completed = update.value1;
-                        return _337;
+                        _387.completed = update.value1;
+                        return _387;
                     };
-                    if (!_336) {
+                    if (!_386) {
                         return t;
                     };
                     throw new Error("Failed pattern match");
                 };
-                var _339 = {};
-                for (var _340 in state_1) {
-                    if (state_1.hasOwnProperty(_340)) {
-                        _339[_340] = state_1[_340];
+                var _389 = {};
+                for (var _390 in state_1) {
+                    if (state_1.hasOwnProperty(_390)) {
+                        _389[_390] = state_1[_390];
                     };
                 };
-                _339.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
-                return _339;
+                _389.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                return _389;
             };
             if (update instanceof CheckAll) {
                 var stepTask = function (t) {
-                    var _343 = {};
-                    for (var _344 in t) {
-                        if (t.hasOwnProperty(_344)) {
-                            _343[_344] = t[_344];
+                    var _393 = {};
+                    for (var _394 in t) {
+                        if (t.hasOwnProperty(_394)) {
+                            _393[_394] = t[_394];
                         };
                     };
-                    _343.completed = update.value0;
-                    return _343;
+                    _393.completed = update.value0;
+                    return _393;
                 };
-                var _345 = {};
-                for (var _346 in state_1) {
-                    if (state_1.hasOwnProperty(_346)) {
-                        _345[_346] = state_1[_346];
+                var _395 = {};
+                for (var _396 in state_1) {
+                    if (state_1.hasOwnProperty(_396)) {
+                        _395[_396] = state_1[_396];
                     };
                 };
-                _345.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
-                return _345;
+                _395.tasks = Prelude["<$>"](Data_Array.functorArray)(stepTask)(state_1.tasks);
+                return _395;
             };
             if (update instanceof ChangeVisibility) {
-                var _348 = {};
-                for (var _349 in state_1) {
-                    if (state_1.hasOwnProperty(_349)) {
-                        _348[_349] = state_1[_349];
+                var _398 = {};
+                for (var _399 in state_1) {
+                    if (state_1.hasOwnProperty(_399)) {
+                        _398[_399] = state_1[_399];
                     };
                 };
-                _348.visibility = update.value0;
-                return _348;
+                _398.visibility = update.value0;
+                return _398;
             };
             throw new Error("Failed pattern match");
         };
@@ -5578,11 +6632,11 @@ function appendBody(node) {
             })(tasks));
             var tasksLeft = Data_Array.length(tasks) - tasksCompleted;
             var item_ = (function () {
-                var _351 = tasksLeft === 1;
-                if (_351) {
+                var _401 = tasksLeft === 1;
+                if (_401) {
                     return " item";
                 };
-                if (!_351) {
+                if (!_401) {
                     return " items";
                 };
                 throw new Error("Failed pattern match");
@@ -5596,11 +6650,21 @@ function appendBody(node) {
         return Data_Html_Elements_Html5.div([ Data_Html_Attributes_Html5.class_("todomvc-wrapper") ])([ Data_Html_Elements_Html5.section([ Data_Html_Attributes_Html5.id_("todoapp") ])([ Data_Html_Lazy.thunk1(Prelude.eqString)(taskEntry)(state_1.field), Data_Html_Lazy.partial2(sameVisTask)(taskList)(state_1.visibility)(state_1.tasks), Data_Html_Lazy.partial2(sameVisTask)(controls)(state_1.visibility)(state_1.tasks) ]), infoFooter ]);
     };
     var main = function __do() {
-        var _5 = Data_Html.createElement(Data_Html_Elements_Html5.text("loading..."))();
-        Prelude[">>="](Control_Monad_Eff.bindEff)(Data_Html.getNode(_5))(appendBody)();
-        return FRP_Kefir.onValue(state)(function (v) {
-            return Data_Html.patch(view(v))(_5);
+        var _13 = Data_Html.createElement(Data_Html_Elements_Html5.text("loading..."))();
+        Prelude[">>="](Control_Monad_Eff.bindEff)(Data_Html.getNode(_13))(appendBody)();
+        FRP_Kefir.onValue(state)(function (v) {
+            return Data_Html.patch(view(v))(_13);
         })();
+        return Network_Routing_Client.runRouter(Prelude[">>="](Network_Routing_Client.bindRoutingM)(Network_Routing_Client.route0(Network_Routing_Client["-/"](Network_Routing_Client.exact("active"))(Network_Routing_Client.empty))(FRP_Kefir.emitAsync(updates)(new ChangeVisibility(Active.value))))(function () {
+            return Prelude[">>="](Network_Routing_Client.bindRoutingM)(Network_Routing_Client.route0(Network_Routing_Client["-/"](Network_Routing_Client.exact("completed"))(Network_Routing_Client.empty))(FRP_Kefir.emitAsync(updates)(new ChangeVisibility(Completed.value))))(function () {
+                return Network_Routing_Client.notFound(function (set) {
+                    return function __do() {
+                        set("/")();
+                        return FRP_Kefir.emitAsync(updates)(new ChangeVisibility(All.value))();
+                    };
+                });
+            });
+        }))();
     };
     return {
         UpdateField: UpdateField, 
